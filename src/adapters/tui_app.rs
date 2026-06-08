@@ -119,13 +119,13 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
     }
 
     fn handle_key(&mut self, code: KeyCode) -> Result<bool, String> {
-        if code == KeyCode::Char('q') {
-            return Ok(true);
-        }
-
         match self.state.interaction.clone() {
             Interaction::None => self.handle_normal_key(code),
             Interaction::Help => {
+                // q quits (true); Esc/? closes help (false) — different returns, so two separate ifs
+                if code == KeyCode::Char('q') {
+                    return Ok(true);
+                }
                 if matches!(code, KeyCode::Esc | KeyCode::Char('?')) {
                     self.state.interaction = Interaction::None;
                 }
@@ -144,6 +144,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
 
     fn handle_normal_key(&mut self, code: KeyCode) -> Result<bool, String> {
         match code {
+            KeyCode::Char('q') => Ok(true),
             KeyCode::Char('?') => {
                 self.state.interaction = Interaction::Help;
                 Ok(false)
@@ -1119,5 +1120,77 @@ mod tests {
             text.push('\n');
         }
         text
+    }
+
+    // AT-1 covers REQ-1, REQ-3: q in Editing does not quit; goes into input buffer
+    #[test]
+    fn q_in_editing_mode_appends_to_input_not_quit() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Char('n')).unwrap();
+        assert!(matches!(app.state.interaction, Interaction::Editing(_)));
+
+        let quit = app.handle_key(KeyCode::Char('q')).unwrap();
+
+        assert!(!quit, "expected Ok(false) — app should not quit while editing");
+        assert_eq!(app.state.input, "q");
+    }
+
+    // AT-2 covers REQ-1: full word containing q types correctly
+    #[test]
+    fn termotanque_in_editing_mode_fills_input_buffer() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Char('n')).unwrap();
+
+        for c in "termotanque".chars() {
+            let quit = app.handle_key(KeyCode::Char(c)).unwrap();
+            assert!(!quit, "char '{c}' should not quit while editing");
+        }
+
+        assert_eq!(app.state.input, "termotanque");
+    }
+
+    // AT-3 covers REQ-2, REQ-3: q in Confirming does not quit; interaction stays Confirming
+    #[test]
+    fn q_in_confirming_mode_does_not_quit() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Char('d')).unwrap();
+        assert!(matches!(app.state.interaction, Interaction::Confirming(_)));
+
+        let quit = app.handle_key(KeyCode::Char('q')).unwrap();
+
+        assert!(!quit, "expected Ok(false) — app should not quit while confirming");
+        assert!(
+            matches!(app.state.interaction, Interaction::Confirming(_)),
+            "interaction should stay Confirming"
+        );
+    }
+
+    // AT-4 covers REQ-3: q in None interaction quits normally
+    #[test]
+    fn q_in_normal_mode_quits() {
+        let mut app = seeded_app();
+        assert_eq!(app.state.interaction, Interaction::None);
+
+        let quit = app.handle_key(KeyCode::Char('q')).unwrap();
+
+        assert!(quit, "expected Ok(true) — q should quit in normal mode");
+    }
+
+    // AT-5 covers REQ-4: navigation keys inactive during Editing
+    #[test]
+    fn navigation_keys_inactive_during_editing() {
+        let mut app = seeded_app();
+        let mode_before = app.state.mode;
+        let selected_before = app.state.selected_list;
+        app.handle_key(KeyCode::Char('n')).unwrap();
+
+        let r1 = app.handle_key(KeyCode::Up).unwrap();
+        let r2 = app.handle_key(KeyCode::Down).unwrap();
+        // Enter with empty input: submit_edit fails with EmptyName, does not change mode/selection
+        let r3 = app.handle_key(KeyCode::Enter).unwrap();
+
+        assert!(!r1 && !r2 && !r3, "Up/Down/Enter should return Ok(false) while editing");
+        assert_eq!(app.state.selected_list, selected_before);
+        assert_eq!(app.state.mode, mode_before);
     }
 }
