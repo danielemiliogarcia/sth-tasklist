@@ -173,13 +173,13 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 self.select_previous();
                 Ok(false)
             }
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Right => {
                 if self.state.mode == Mode::Lists {
                     self.open_tasks()?;
                 }
                 Ok(false)
             }
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Left => {
                 if matches!(self.state.mode, Mode::Tasks(_)) {
                     self.state.mode = Mode::Lists;
                     self.state.tasks.clear();
@@ -695,7 +695,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 ListItem::new("n new list"),
                 ListItem::new("r rename list"),
                 ListItem::new("d delete list"),
-                ListItem::new("Enter open tasks"),
+                ListItem::new("Enter/Right open tasks"),
                 ListItem::new("Up/Down select list"),
                 ListItem::new("Esc close help"),
                 ListItem::new("q quit"),
@@ -707,7 +707,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 ListItem::new("d delete task"),
                 ListItem::new("Space complete task"),
                 ListItem::new("Up/Down select task"),
-                ListItem::new("Esc return to lists"),
+                ListItem::new("Esc/Left return to lists"),
                 ListItem::new("q quit"),
             ],
         };
@@ -840,7 +840,7 @@ mod tests {
         assert!(text.contains("n new list"));
         assert!(text.contains("r rename list"));
         assert!(text.contains("d delete list"));
-        assert!(text.contains("Enter open tasks"));
+        assert!(text.contains("Enter/Right open tasks"));
         assert!(text.contains("q quit"));
 
         app.handle_key(KeyCode::Esc).unwrap();
@@ -1121,6 +1121,79 @@ mod tests {
         }
         text
     }
+
+    // --- panel-navigation tests (AT-1..AT-5) ---
+
+    // AT-1 covers REQ-1: Right opens tasks panel (same as Enter)
+    #[test]
+    fn right_arrow_opens_tasks_panel() {
+        let mut app = seeded_app();
+        assert_eq!(app.state.mode, Mode::Lists);
+
+        app.handle_key(KeyCode::Right).unwrap();
+
+        assert_eq!(app.state.mode, Mode::Tasks(0));
+        let text = render_text(&mut app);
+        assert!(text.contains("milk") || text.contains("bread"));
+    }
+
+    // AT-2 covers REQ-2: Left returns to lists panel
+    #[test]
+    fn left_arrow_returns_to_lists() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Enter).unwrap();
+        assert!(matches!(app.state.mode, Mode::Tasks(_)));
+
+        app.handle_key(KeyCode::Left).unwrap();
+
+        assert_eq!(app.state.mode, Mode::Lists);
+        assert!(render_text(&mut app).contains("No task list open"));
+    }
+
+    // AT-3 covers REQ-1, REQ-3: Right and Enter produce identical result
+    #[test]
+    fn right_and_enter_are_equivalent() {
+        let mut app = seeded_app();
+
+        app.handle_key(KeyCode::Enter).unwrap();
+        let mode_after_enter = app.state.mode;
+
+        app.handle_key(KeyCode::Esc).unwrap();
+        app.handle_key(KeyCode::Right).unwrap();
+        let mode_after_right = app.state.mode;
+
+        assert_eq!(mode_after_enter, mode_after_right);
+    }
+
+    // AT-4 covers REQ-2, REQ-3: Left and Esc are equivalent
+    #[test]
+    fn left_and_esc_are_equivalent() {
+        let mut app = seeded_app();
+
+        app.handle_key(KeyCode::Enter).unwrap();
+        app.handle_key(KeyCode::Esc).unwrap();
+        let mode_after_esc = app.state.mode;
+
+        app.handle_key(KeyCode::Enter).unwrap();
+        app.handle_key(KeyCode::Left).unwrap();
+        let mode_after_left = app.state.mode;
+
+        assert_eq!(mode_after_esc, mode_after_left);
+        assert_eq!(mode_after_left, Mode::Lists);
+    }
+
+    // AT-5 covers REQ-1: Right is no-op when no lists exist
+    #[test]
+    fn right_is_noop_when_no_lists() {
+        let mut app = empty_app();
+        assert_eq!(app.state.mode, Mode::Lists);
+
+        app.handle_key(KeyCode::Right).unwrap();
+
+        assert_eq!(app.state.mode, Mode::Lists);
+    }
+
+    // --- modal-input tests (AT-1..AT-5) ---
 
     // AT-1 covers REQ-1, REQ-3: q in Editing does not quit; goes into input buffer
     #[test]
