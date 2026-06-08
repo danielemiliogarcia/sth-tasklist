@@ -9,7 +9,7 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::{Frame, Terminal};
 
@@ -174,6 +174,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 Ok(false)
             }
             KeyCode::Enter | KeyCode::Right => {
+                // Right is a no-op in Tasks mode — guard lives inside open_tasks
                 if self.state.mode == Mode::Lists {
                     self.open_tasks()?;
                 }
@@ -634,8 +635,15 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             list_state.select(Some(self.state.selected_list));
         }
 
+        let active = matches!(self.state.mode, Mode::Lists);
         let list = List::new(items)
-            .block(Block::default().title("Task Lists").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("Task Lists")
+                    .borders(Borders::ALL)
+                    .border_style(panel_style(active))
+                    .title_style(panel_style(active)),
+            )
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
             .highlight_symbol("> ");
 
@@ -663,8 +671,15 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             task_state.select(Some(self.state.selected_task));
         }
 
+        let active = matches!(self.state.mode, Mode::Tasks(_));
         let list = List::new(items)
-            .block(Block::default().title("Tasks").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("Tasks")
+                    .borders(Borders::ALL)
+                    .border_style(panel_style(active))
+                    .title_style(panel_style(active)),
+            )
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
             .highlight_symbol("> ");
 
@@ -751,6 +766,14 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         let paragraph =
             Paragraph::new(text).block(Block::default().title("Status").borders(Borders::ALL));
         frame.render_widget(paragraph, area);
+    }
+}
+
+fn panel_style(active: bool) -> Style {
+    if active {
+        Style::default().fg(Color::LightCyan)
+    } else {
+        Style::default().fg(Color::Reset)
     }
 }
 
@@ -1103,10 +1126,7 @@ mod tests {
     }
 
     fn render_text(app: &mut App<InMemoryTaskListRepository, SeqIdGenerator>) -> String {
-        let backend = TestBackend::new(100, 28);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| app.render(frame)).unwrap();
-        buffer_text(&terminal)
+        buffer_text(&render_terminal(app))
     }
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
@@ -1122,6 +1142,25 @@ mod tests {
         text
     }
 
+    fn render_terminal(app: &mut App<InMemoryTaskListRepository, SeqIdGenerator>) -> Terminal<TestBackend> {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+        terminal
+    }
+
+    fn area_has_cyan(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16) -> bool {
+        let buffer = terminal.backend().buffer();
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                if buffer[(x, y)].fg == Color::LightCyan {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     // --- panel-navigation tests (AT-1..AT-5) ---
 
     // AT-1 covers REQ-1: Right opens tasks panel (same as Enter)
@@ -1134,7 +1173,7 @@ mod tests {
 
         assert_eq!(app.state.mode, Mode::Tasks(0));
         let text = render_text(&mut app);
-        assert!(text.contains("milk") || text.contains("bread"));
+        assert!(text.contains("milk") && text.contains("bread"));
     }
 
     // AT-2 covers REQ-2: Left returns to lists panel
@@ -1265,5 +1304,55 @@ mod tests {
         assert!(!r1 && !r2 && !r3, "Up/Down/Enter should return Ok(false) while editing");
         assert_eq!(app.state.selected_list, selected_before);
         assert_eq!(app.state.mode, mode_before);
+    }
+
+    // --- panel-focus-colors tests (AT-1..AT-3) ---
+    // Layout fixed to 100x28 TestBackend. Constraint::Percentage(45) over 100 cols = x 0..45 for lists,
+    // x 45..100 for tasks. If terminal width changes, update these bounds.
+
+    // AT-1 covers REQ-1, REQ-3: lists border is LightCyan in Lists mode; tasks border is not
+    #[test]
+    fn lists_panel_border_is_cyan_in_lists_mode() {
+        let mut app = seeded_app();
+        assert_eq!(app.state.mode, Mode::Lists);
+        let terminal = render_terminal(&mut app);
+
+        assert!(area_has_cyan(&terminal, 0, 45, 0, 25), "lists border should be LightCyan in Lists mode");
+        assert!(!area_has_cyan(&terminal, 45, 100, 0, 25), "tasks border should NOT be LightCyan in Lists mode");
+    }
+
+    // AT-2 covers REQ-2, REQ-3: tasks border is LightCyan in Tasks mode; lists border is not
+    #[test]
+    fn tasks_panel_border_is_cyan_in_tasks_mode() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Enter).unwrap();
+        assert!(matches!(app.state.mode, Mode::Tasks(_)));
+        let terminal = render_terminal(&mut app);
+
+        assert!(area_has_cyan(&terminal, 45, 100, 0, 25), "tasks border should be LightCyan in Tasks mode");
+        assert!(!area_has_cyan(&terminal, 0, 45, 0, 25), "lists border should NOT be LightCyan in Tasks mode");
+    }
+
+    // AT-3 covers REQ-1, REQ-2: cyan tracks mode toggle
+    #[test]
+    fn cyan_tracks_mode_toggle() {
+        let mut app = seeded_app();
+
+        // Lists mode: lists panel cyan
+        let t1 = render_terminal(&mut app);
+        assert!(area_has_cyan(&t1, 0, 45, 0, 25));
+        assert!(!area_has_cyan(&t1, 45, 100, 0, 25));
+
+        // Tasks mode: tasks panel cyan
+        app.handle_key(KeyCode::Enter).unwrap();
+        let t2 = render_terminal(&mut app);
+        assert!(area_has_cyan(&t2, 45, 100, 0, 25));
+        assert!(!area_has_cyan(&t2, 0, 45, 0, 25));
+
+        // Back to Lists: lists panel cyan again
+        app.handle_key(KeyCode::Esc).unwrap();
+        let t3 = render_terminal(&mut app);
+        assert!(area_has_cyan(&t3, 0, 45, 0, 25));
+        assert!(!area_has_cyan(&t3, 45, 100, 0, 25));
     }
 }
