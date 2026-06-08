@@ -1,0 +1,8 @@
+active_panel_border   = "LightCyan"
+inactive_panel_border = "White"
+
+selected_item_fg = "Black"
+selected_item_bg = "LightYellow"
+
+normal_item_fg = "Reset"
+completed_task_fg = "Green"

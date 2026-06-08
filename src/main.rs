@@ -6,8 +6,10 @@
 use std::process::ExitCode;
 
 use shtask::adapters::toml_repo::TomlTaskListRepository;
+use shtask::adapters::toml_theme::TomlThemeRepository;
 use shtask::adapters::tui_app::App;
 use shtask::adapters::uuid_id::UuidIdGenerator;
+use shtask::application::ports::ThemeRepository;
 use shtask::application::create_task_list::CreateTaskList;
 use shtask::application::delete_task_list::DeleteTaskList;
 use shtask::application::list_task_lists::ListTaskLists;
@@ -34,7 +36,9 @@ fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     let ids = UuidIdGenerator::new();
     wire_usecases(&mut repo, &ids)?;
 
-    let mut app = App::new(repo, ids);
+    // colours.toml is optional; missing/malformed file falls back to defaults
+    let theme = TomlThemeRepository::new("./colours.toml").load();
+    let mut app = App::new(repo, ids, theme);
     if headless {
         return app.load_once();
     }
