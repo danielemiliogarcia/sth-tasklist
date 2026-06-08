@@ -11,8 +11,7 @@ pub enum TaskError {
     NotFound,
 }
 
-/// A single task. Invariant: `title` is non-empty/non-whitespace. New tasks
-/// start incomplete. Completion is one-way (see the aggregate's `complete_task`).
+/// A single task. Invariant: `title` is non-empty/non-whitespace. New tasks start incomplete.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     title: String,
@@ -45,10 +44,14 @@ impl Task {
         self.title = title;
     }
 
-    /// Mark the task completed. One-way and idempotent — completing an already
-    /// completed task leaves it completed.
+    /// Mark the task completed. Idempotent.
     pub(crate) fn mark_completed(&mut self) {
         self.completed = true;
+    }
+
+    /// Mark the task incomplete. Idempotent.
+    pub(crate) fn mark_uncompleted(&mut self) {
+        self.completed = false;
     }
 }
 
@@ -65,6 +68,16 @@ mod tests {
     fn new_task_starts_incomplete() {
         let t = Task::new("milk").unwrap();
         assert_eq!(t.title(), "milk");
+        assert!(!t.is_completed());
+    }
+
+    // AT-1 covers REQ-1 (uncomplete-task): mark_uncompleted resets completed to false
+    #[test]
+    fn mark_uncompleted_resets_to_incomplete() {
+        let mut t = Task::new("milk").unwrap();
+        t.mark_completed();
+        assert!(t.is_completed());
+        t.mark_uncompleted();
         assert!(!t.is_completed());
     }
 }

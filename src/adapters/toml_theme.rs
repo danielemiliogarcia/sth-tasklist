@@ -16,6 +16,7 @@ struct ColourThemeDto {
     selected_item_fg: Option<String>,
     selected_item_bg: Option<String>,
     normal_item_fg: Option<String>,
+    completed_task_fg: Option<String>,
 }
 
 pub struct TomlThemeRepository {
@@ -79,6 +80,10 @@ fn load_theme(path: &Path) -> ColourTheme {
             .normal_item_fg
             .and_then(|s| parse_color(&s))
             .unwrap_or(defaults.normal_item_fg),
+        completed_task_fg: dto
+            .completed_task_fg
+            .and_then(|s| parse_color(&s))
+            .unwrap_or(defaults.completed_task_fg),
     }
 }
 
@@ -134,6 +139,14 @@ mod tests {
         let theme = TomlThemeRepository::new(&path).load();
         assert_eq!(theme.active_panel_border, NamedColor::Green);
         assert_eq!(theme.inactive_panel_border, ColourTheme::default().inactive_panel_border);
+    }
+
+    // AT-3 (green-completed-tasks) covers REQ-3: completed_task_fg overridden by TOML
+    #[test]
+    fn completed_task_fg_overridden_by_toml() {
+        let path = write_temp("at_green_completed.toml", r#"completed_task_fg = "cyan""#);
+        let theme = TomlThemeRepository::new(&path).load();
+        assert_eq!(theme.completed_task_fg, NamedColor::Cyan);
     }
 
     // AT-4 covers REQ-3: malformed TOML returns default (no panic)

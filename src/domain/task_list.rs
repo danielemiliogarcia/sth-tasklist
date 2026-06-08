@@ -108,7 +108,7 @@ impl TaskList {
         Ok(())
     }
 
-    /// Mark the task titled `title` completed (one-way, idempotent).
+    /// Mark the task titled `title` completed (idempotent).
     pub fn complete_task(&mut self, title: &str) -> Result<(), TaskError> {
         let task = self
             .tasks
@@ -116,6 +116,17 @@ impl TaskList {
             .find(|t| t.title() == title)
             .ok_or(TaskError::NotFound)?;
         task.mark_completed();
+        Ok(())
+    }
+
+    /// Mark the task titled `title` incomplete (idempotent). Reports NotFound if absent.
+    pub fn uncomplete_task(&mut self, title: &str) -> Result<(), TaskError> {
+        let task = self
+            .tasks
+            .iter_mut()
+            .find(|t| t.title() == title)
+            .ok_or(TaskError::NotFound)?;
+        task.mark_uncompleted();
         Ok(())
     }
 
@@ -256,5 +267,23 @@ mod tests {
     #[test]
     fn empty_list_is_not_completed() {
         assert!(!list().is_completed());
+    }
+
+    // AT-2 covers REQ-2 (uncomplete-task): uncomplete_task resets a completed task
+    #[test]
+    fn uncomplete_task_resets_completed_task() {
+        let mut l = list();
+        l.add_task("milk").unwrap();
+        l.complete_task("milk").unwrap();
+        assert!(l.tasks()[0].is_completed());
+        l.uncomplete_task("milk").unwrap();
+        assert!(!l.tasks()[0].is_completed());
+    }
+
+    // AT-3 covers REQ-2 (uncomplete-task): uncomplete_task returns NotFound for unknown title
+    #[test]
+    fn uncomplete_missing_task_is_not_found() {
+        let mut l = list();
+        assert_eq!(l.uncomplete_task("ghost"), Err(TaskError::NotFound));
     }
 }

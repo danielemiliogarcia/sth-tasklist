@@ -20,7 +20,7 @@ use crate::application::ports::{IdGenerator, TaskListRepository};
 use crate::domain::colour_theme::{ColourTheme, NamedColor};
 use crate::application::rename_task_list::{RenameError, RenameTaskList};
 use crate::application::task_commands::{
-    AddTask, CompleteTask, DeleteTask, ListTasks, RenameTask, TaskCommandError,
+    AddTask, CompleteTask, DeleteTask, ListTasks, RenameTask, TaskCommandError, UncompleteTask,
 };
 use crate::domain::task::Task;
 use crate::domain::task_list::{TaskList, TaskListId};
@@ -165,7 +165,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 Ok(false)
             }
             KeyCode::Char(' ') => {
-                self.complete_selected_task()?;
+                self.toggle_selected_task()?;
                 Ok(false)
             }
             KeyCode::Down => {
@@ -426,7 +426,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         }
     }
 
-    fn complete_selected_task(&mut self) -> Result<(), String> {
+    fn toggle_selected_task(&mut self) -> Result<(), String> {
         let Mode::Tasks(list_index) = self.state.mode else {
             return Ok(());
         };
@@ -434,16 +434,29 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             self.state.status = "List not found".to_string();
             return Ok(());
         };
-        let Some(title) = self.task_title_at(self.state.selected_task) else {
+        let Some(task) = self.state.tasks.get(self.state.selected_task) else {
             self.state.status = "Task not found".to_string();
             return Ok(());
         };
-        match CompleteTask::new(&mut self.repo).execute(&id, &title) {
-            Ok(()) => {
+        let title = task.title().to_string();
+        let is_done = task.is_completed();
+
+        let result = if is_done {
+            UncompleteTask::new(&mut self.repo)
+                .execute(&id, &title)
+                .map(|()| "Marked incomplete")
+        } else {
+            CompleteTask::new(&mut self.repo)
+                .execute(&id, &title)
+                .map(|()| "Completed task")
+        };
+
+        match result {
+            Ok(msg) => {
                 self.state.selected_list = list_index;
                 self.state.mode = Mode::Tasks(list_index);
                 self.refresh()?;
-                self.state.status = "Completed task".to_string();
+                self.state.status = msg.to_string();
                 Ok(())
             }
             Err(e) => {
@@ -597,7 +610,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             Mode::Tasks(_) => {
                 let task = &self.state.tasks[self.state.selected_task];
                 format!(
-                    "Task {}/{}: {} | Space: complete | n/r/d: task actions | Esc: lists | ?: help | q: quit",
+                    "Task {}/{}: {} | Space: toggle complete | n/r/d: task actions | Esc: lists | ?: help | q: quit",
                     self.state.selected_task + 1,
                     self.state.tasks.len(),
                     task.title()
@@ -607,9 +620,9 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
     }
 
     fn render(&self, frame: &mut Frame) {
-        let [main_area, status_area] = Layout::default()
+        let [main_area, status_area, hotkey_area] = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(3)])
+            .constraints([Constraint::Min(1), Constraint::Length(3), Constraint::Length(1)])
             .areas(frame.area());
         let [lists_area, tasks_area] = Layout::default()
             .direction(Direction::Horizontal)
@@ -619,6 +632,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         self.render_lists(frame, lists_area);
         self.render_tasks(frame, tasks_area);
         self.render_status(frame, status_area);
+        self.render_hotkeys(frame, hotkey_area);
     }
 
     fn render_lists(&self, frame: &mut Frame, area: Rect) {
@@ -635,12 +649,12 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                     } else {
                         "  "
                     };
-                    let status = if list.is_completed() {
-                        "✓"
+                    let (status, style) = if list.is_completed() {
+                        ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
                     } else {
-                        "pending"
+                        ("pending", Style::default())
                     };
-                    ListItem::new(format!("{marker} {status} {}", list.name()))
+                    ListItem::new(format!("{marker} {status} {}", list.name())).style(style)
                 })
                 .collect()
         };
@@ -712,8 +726,12 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 } else {
                     "  "
                 };
-                let status = if task.is_completed() { "✓" } else { "☐" };
-                ListItem::new(format!("{marker} {status} {}", task.title()))
+                let (status, style) = if task.is_completed() {
+                    ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
+                } else {
+                    ("☐", Style::default())
+                };
+                ListItem::new(format!("{marker} {status} {}", task.title())).style(style)
             })
             .collect()
     }
@@ -735,7 +753,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 ListItem::new("n new task"),
                 ListItem::new("r rename task"),
                 ListItem::new("d delete task"),
-                ListItem::new("Space complete task"),
+                ListItem::new("Space toggle complete"),
                 ListItem::new("Up/Down select task"),
                 ListItem::new("Esc/Left/Tab return to lists"),
                 ListItem::new("q quit"),
@@ -780,6 +798,20 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         };
         let paragraph =
             Paragraph::new(text).block(Block::default().title("Status").borders(Borders::ALL));
+        frame.render_widget(paragraph, area);
+    }
+
+    fn render_hotkeys(&self, frame: &mut Frame, area: Rect) {
+        let text = match &self.state.interaction {
+            Interaction::None => match self.state.mode {
+                Mode::Lists => "n: new  r: rename  d: delete  Enter/Tab: open tasks  q: quit",
+                Mode::Tasks(_) => "n: new  r: rename  d: delete  Space: toggle  Esc/Tab: lists  q: quit",
+            },
+            Interaction::Help => "?: close help  q: quit",
+            Interaction::Editing(_) => "Enter: submit  Esc: cancel",
+            Interaction::Confirming(_) => "y: confirm  n/Esc: cancel",
+        };
+        let paragraph = Paragraph::new(text).style(Style::default().fg(Color::DarkGray));
         frame.render_widget(paragraph, area);
     }
 
@@ -1187,6 +1219,18 @@ mod tests {
         buffer_text(&render_terminal(app))
     }
 
+    fn render_hotkey_text(app: &mut App<InMemoryTaskListRepository, SeqIdGenerator>) -> String {
+        let terminal = render_terminal(app);
+        let buffer = terminal.backend().buffer();
+        // hotkey bar is the last row; layout Min(1)+Length(3)+Length(1) → row 27 in 28-row backend
+        let y = buffer.area.bottom() - 1;
+        let mut row = String::new();
+        for x in buffer.area.left()..buffer.area.right() {
+            row.push_str(buffer[(x, y)].symbol());
+        }
+        row
+    }
+
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
         let buffer = terminal.backend().buffer();
         let area = buffer.area;
@@ -1517,6 +1561,87 @@ mod tests {
             }
         }
         false
+    }
+
+    // --- hotkey-bar tests (AT-1..AT-5) ---
+
+    // AT-1/AT-2 covers REQ-1, REQ-2: hotkey bar visible in Lists/None mode
+    #[test]
+    fn hotkey_bar_lists_mode_shows_open_tasks_hint() {
+        let mut app = seeded_app();
+        let row = render_hotkey_text(&mut app);
+        assert!(row.contains("n: new"), "hotkey bar: n: new");
+        assert!(row.contains("Enter/Tab: open tasks"), "hotkey bar: Enter/Tab: open tasks");
+        assert!(row.contains("q: quit"), "hotkey bar: q: quit");
+    }
+
+    // AT-3 covers REQ-3: hotkey bar in Tasks/None mode
+    #[test]
+    fn hotkey_bar_tasks_mode_shows_toggle_hint() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Enter).unwrap();
+        let row = render_hotkey_text(&mut app);
+        assert!(row.contains("Space: toggle"), "hotkey bar: Space: toggle");
+        assert!(row.contains("Esc/Tab: lists"), "hotkey bar: Esc/Tab: lists");
+    }
+
+    // AT-4 covers REQ-4: hotkey bar during Editing shows submit/cancel, no q: quit
+    #[test]
+    fn hotkey_bar_editing_shows_submit_cancel() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Char('n')).unwrap();
+        let row = render_hotkey_text(&mut app);
+        assert!(row.contains("Enter: submit"), "hotkey bar: Enter: submit");
+        assert!(row.contains("Esc: cancel"), "hotkey bar: Esc: cancel");
+        assert!(!row.contains("q: quit"), "hotkey bar: no q: quit while editing");
+    }
+
+    // AT-5 covers REQ-5: hotkey bar during Confirming shows y/n, no q: quit
+    #[test]
+    fn hotkey_bar_confirming_shows_confirm_cancel() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Char('d')).unwrap();
+        let row = render_hotkey_text(&mut app);
+        assert!(row.contains("y: confirm"), "hotkey bar: y: confirm");
+        assert!(row.contains("n/Esc: cancel"), "hotkey bar: n/Esc: cancel");
+        assert!(!row.contains("q: quit"), "hotkey bar: no q: quit while confirming");
+    }
+
+    // AT-5 covers REQ-4, REQ-5 (uncomplete-task): Space toggles completion both ways
+    #[test]
+    fn space_toggles_task_completion() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Enter).unwrap(); // open tasks (milk=completed, bread=incomplete)
+        // milk is already completed; Space → should uncomplete it
+        app.handle_key(KeyCode::Char(' ')).unwrap();
+        assert!(!app.state.tasks[0].is_completed(), "milk should be incomplete after first Space");
+        // Space again → complete it
+        app.handle_key(KeyCode::Char(' ')).unwrap();
+        assert!(app.state.tasks[0].is_completed(), "milk should be complete after second Space");
+    }
+
+    // AT-6 covers REQ-6 (uncomplete-task): status bar and help mention "toggle complete"
+    #[test]
+    fn status_and_help_say_toggle_complete() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Enter).unwrap();
+        app.handle_key(KeyCode::Down).unwrap(); // select bread (incomplete)
+        let text = render_text(&mut app);
+        assert!(text.contains("toggle complete"), "status bar should say toggle complete");
+
+        app.handle_key(KeyCode::Char('?')).unwrap();
+        let help_text = render_text(&mut app);
+        assert!(help_text.contains("Space toggle complete"), "help should say Space toggle complete");
+    }
+
+    // AT-2 covers REQ-1 (green-completed-tasks): completed task renders with completed_task_fg color
+    #[test]
+    fn completed_task_renders_with_completed_task_fg() {
+        let mut app = seeded_app(); // "milk" in list 0 is completed
+        app.handle_key(KeyCode::Enter).unwrap(); // open tasks panel
+        let terminal = render_terminal(&mut app);
+        // tasks panel is x=45..100; "milk" (✓) should have fg = Color::Green
+        assert!(area_has_fg(&terminal, 45, 100, 0, 25, Color::Green));
     }
 
     // AT-5 covers REQ-4, REQ-6: default theme renders LightCyan lists border in Lists mode

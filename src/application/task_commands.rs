@@ -99,7 +99,7 @@ impl<'a, R: TaskListRepository> DeleteTask<'a, R> {
     }
 }
 
-/// Mark a task completed within an existing list (one-way, idempotent).
+/// Mark a task completed within an existing list (idempotent).
 pub struct CompleteTask<'a, R: TaskListRepository> {
     repo: &'a mut R,
 }
@@ -116,6 +116,29 @@ impl<'a, R: TaskListRepository> CompleteTask<'a, R> {
             .map_err(|e| TaskCommandError::Repo(e.0))?
             .ok_or(TaskCommandError::ListNotFound)?;
         list.complete_task(title)?;
+        self.repo
+            .save(&list)
+            .map_err(|e| TaskCommandError::Repo(e.0))
+    }
+}
+
+/// Mark a task incomplete within an existing list (idempotent).
+pub struct UncompleteTask<'a, R: TaskListRepository> {
+    repo: &'a mut R,
+}
+
+impl<'a, R: TaskListRepository> UncompleteTask<'a, R> {
+    pub fn new(repo: &'a mut R) -> Self {
+        Self { repo }
+    }
+
+    pub fn execute(&mut self, list_id: &TaskListId, title: &str) -> Result<(), TaskCommandError> {
+        let mut list = self
+            .repo
+            .by_id(list_id)
+            .map_err(|e| TaskCommandError::Repo(e.0))?
+            .ok_or(TaskCommandError::ListNotFound)?;
+        list.uncomplete_task(title)?;
         self.repo
             .save(&list)
             .map_err(|e| TaskCommandError::Repo(e.0))
@@ -174,6 +197,17 @@ mod tests {
             .collect();
 
         assert_eq!(titles, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    // AT-4 covers REQ-3 (uncomplete-task): UncompleteTask persists the change
+    #[test]
+    fn uncomplete_task_persists_change() {
+        let (mut repo, id) = repo_with_list();
+        AddTask::new(&mut repo).execute(&id, "milk").unwrap();
+        CompleteTask::new(&mut repo).execute(&id, "milk").unwrap();
+        UncompleteTask::new(&mut repo).execute(&id, "milk").unwrap();
+        let tasks = ListTasks::new(&repo).execute(&id).unwrap();
+        assert!(!tasks[0].is_completed());
     }
 
     // AT-14 covers REQ-8: adding to a missing list reports ListNotFound.
