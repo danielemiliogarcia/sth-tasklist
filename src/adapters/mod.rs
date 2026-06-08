@@ -5,5 +5,6 @@
 
 pub mod in_memory;
 pub mod toml_repo;
+pub mod toml_theme;
 pub mod tui_app;
 pub mod uuid_id;

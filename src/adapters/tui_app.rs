@@ -17,6 +17,7 @@ use crate::application::create_task_list::{CreateError, CreateTaskList};
 use crate::application::delete_task_list::{DeleteError, DeleteTaskList};
 use crate::application::list_task_lists::ListTaskLists;
 use crate::application::ports::{IdGenerator, TaskListRepository};
+use crate::domain::colour_theme::{ColourTheme, NamedColor};
 use crate::application::rename_task_list::{RenameError, RenameTaskList};
 use crate::application::task_commands::{
     AddTask, CompleteTask, DeleteTask, ListTasks, RenameTask, TaskCommandError,
@@ -28,6 +29,7 @@ pub struct App<R, I> {
     repo: R,
     ids: I,
     state: AppState,
+    theme: ColourTheme,
 }
 
 #[derive(Default)]
@@ -79,11 +81,12 @@ enum ConfirmAction {
 }
 
 impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
-    pub fn new(repo: R, ids: I) -> Self {
+    pub fn new(repo: R, ids: I, theme: ColourTheme) -> Self {
         Self {
             repo,
             ids,
             state: AppState::default(),
+            theme,
         }
     }
 
@@ -182,9 +185,15 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             }
             KeyCode::Esc | KeyCode::Left => {
                 if matches!(self.state.mode, Mode::Tasks(_)) {
-                    self.state.mode = Mode::Lists;
-                    self.state.tasks.clear();
-                    self.state.selected_task = 0;
+                    self.close_tasks();
+                }
+                Ok(false)
+            }
+            KeyCode::Tab | KeyCode::BackTab => {
+                if self.state.mode == Mode::Lists {
+                    self.open_tasks()?;
+                } else if matches!(self.state.mode, Mode::Tasks(_)) {
+                    self.close_tasks();
                 }
                 Ok(false)
             }
@@ -515,6 +524,12 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         }
     }
 
+    fn close_tasks(&mut self) {
+        self.state.mode = Mode::Lists;
+        self.state.tasks.clear();
+        self.state.selected_task = 0;
+    }
+
     fn open_tasks(&mut self) -> Result<(), String> {
         let Some(list) = self.state.lists.get(self.state.selected_list) else {
             return Ok(());
@@ -641,10 +656,10 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 Block::default()
                     .title("Task Lists")
                     .borders(Borders::ALL)
-                    .border_style(panel_style(active))
-                    .title_style(panel_style(active)),
+                    .border_style(self.panel_style(active))
+                    .title_style(self.panel_style(active)),
             )
-            .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+            .highlight_style(self.highlight_style())
             .highlight_symbol("> ");
 
         frame.render_stateful_widget(list, area, &mut list_state);
@@ -677,10 +692,10 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 Block::default()
                     .title("Tasks")
                     .borders(Borders::ALL)
-                    .border_style(panel_style(active))
-                    .title_style(panel_style(active)),
+                    .border_style(self.panel_style(active))
+                    .title_style(self.panel_style(active)),
             )
-            .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+            .highlight_style(self.highlight_style())
             .highlight_symbol("> ");
 
         frame.render_stateful_widget(list, area, &mut task_state);
@@ -710,7 +725,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 ListItem::new("n new list"),
                 ListItem::new("r rename list"),
                 ListItem::new("d delete list"),
-                ListItem::new("Enter/Right open tasks"),
+                ListItem::new("Enter/Right/Tab open tasks"),
                 ListItem::new("Up/Down select list"),
                 ListItem::new("Esc close help"),
                 ListItem::new("q quit"),
@@ -722,7 +737,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 ListItem::new("d delete task"),
                 ListItem::new("Space complete task"),
                 ListItem::new("Up/Down select task"),
-                ListItem::new("Esc/Left return to lists"),
+                ListItem::new("Esc/Left/Tab return to lists"),
                 ListItem::new("q quit"),
             ],
         };
@@ -767,13 +782,46 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             Paragraph::new(text).block(Block::default().title("Status").borders(Borders::ALL));
         frame.render_widget(paragraph, area);
     }
+
+    fn panel_style(&self, active: bool) -> Style {
+        let color = if active {
+            named_to_color(&self.theme.active_panel_border)
+        } else {
+            named_to_color(&self.theme.inactive_panel_border)
+        };
+        Style::default().fg(color)
+    }
+
+    fn highlight_style(&self) -> Style {
+        if self.theme.selected_item_reverse {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default()
+                .fg(named_to_color(&self.theme.selected_item_fg))
+                .bg(named_to_color(&self.theme.selected_item_bg))
+        }
+    }
 }
 
-fn panel_style(active: bool) -> Style {
-    if active {
-        Style::default().fg(Color::LightCyan)
-    } else {
-        Style::default().fg(Color::Reset)
+fn named_to_color(c: &NamedColor) -> Color {
+    match c {
+        NamedColor::Black => Color::Black,
+        NamedColor::Red => Color::Red,
+        NamedColor::Green => Color::Green,
+        NamedColor::Yellow => Color::Yellow,
+        NamedColor::Blue => Color::Blue,
+        NamedColor::Magenta => Color::Magenta,
+        NamedColor::Cyan => Color::Cyan,
+        NamedColor::White => Color::White,
+        NamedColor::LightBlack => Color::DarkGray,
+        NamedColor::LightRed => Color::LightRed,
+        NamedColor::LightGreen => Color::LightGreen,
+        NamedColor::LightYellow => Color::LightYellow,
+        NamedColor::LightBlue => Color::LightBlue,
+        NamedColor::LightMagenta => Color::LightMagenta,
+        NamedColor::LightCyan => Color::LightCyan,
+        NamedColor::LightWhite => Color::Gray,
+        NamedColor::Reset => Color::Reset,
     }
 }
 
@@ -845,12 +893,14 @@ fn task_error_message(error: TaskCommandError) -> String {
 mod tests {
     use crossterm::event::KeyCode;
     use ratatui::backend::TestBackend;
+    use ratatui::style::Modifier;
 
     use super::*;
     use crate::adapters::in_memory::{InMemoryTaskListRepository, SeqIdGenerator};
     use crate::application::create_task_list::CreateTaskList;
     use crate::application::ports::TaskListRepository;
     use crate::application::task_commands::{AddTask, CompleteTask, ListTasks};
+    use crate::domain::colour_theme::{ColourTheme, NamedColor};
 
     #[test]
     fn help_view_lists_keys_and_esc_closes_it() {
@@ -863,7 +913,7 @@ mod tests {
         assert!(text.contains("n new list"));
         assert!(text.contains("r rename list"));
         assert!(text.contains("d delete list"));
-        assert!(text.contains("Enter/Right open tasks"));
+        assert!(text.contains("Enter/Right/Tab open tasks"));
         assert!(text.contains("q quit"));
 
         app.handle_key(KeyCode::Esc).unwrap();
@@ -1062,14 +1112,22 @@ mod tests {
     }
 
     fn empty_app() -> App<InMemoryTaskListRepository, SeqIdGenerator> {
+        empty_app_with_theme(ColourTheme::default())
+    }
+
+    fn empty_app_with_theme(theme: ColourTheme) -> App<InMemoryTaskListRepository, SeqIdGenerator> {
         let repo = InMemoryTaskListRepository::new();
         let ids = SeqIdGenerator::new();
-        let mut app = App::new(repo, ids);
+        let mut app = App::new(repo, ids, theme);
         app.load_once().unwrap();
         app
     }
 
     fn seeded_app() -> App<InMemoryTaskListRepository, SeqIdGenerator> {
+        seeded_app_with_theme(ColourTheme::default())
+    }
+
+    fn seeded_app_with_theme(theme: ColourTheme) -> App<InMemoryTaskListRepository, SeqIdGenerator> {
         let mut repo = InMemoryTaskListRepository::new();
         let ids = SeqIdGenerator::new();
 
@@ -1087,7 +1145,7 @@ mod tests {
         };
         AddTask::new(&mut repo).execute(&home, "laundry").unwrap();
 
-        let mut app = App::new(repo, ids);
+        let mut app = App::new(repo, ids, theme);
         app.load_once().unwrap();
         app
     }
@@ -1354,5 +1412,158 @@ mod tests {
         let t3 = render_terminal(&mut app);
         assert!(area_has_cyan(&t3, 0, 45, 0, 25));
         assert!(!area_has_cyan(&t3, 45, 100, 0, 25));
+    }
+
+    // --- tab-panel-switch tests (AT-1..AT-7) ---
+
+    // AT-1 covers REQ-1: Tab in Lists mode opens Tasks panel
+    #[test]
+    fn tab_opens_tasks_panel_from_lists() {
+        let mut app = seeded_app();
+        assert_eq!(app.state.mode, Mode::Lists);
+        app.handle_key(KeyCode::Tab).unwrap();
+        assert_eq!(app.state.mode, Mode::Tasks(0));
+        let text = render_text(&mut app);
+        assert!(text.contains("milk") && text.contains("bread"));
+    }
+
+    // AT-2 covers REQ-2: Tab in Tasks mode returns to Lists
+    #[test]
+    fn tab_returns_to_lists_from_tasks() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Enter).unwrap();
+        app.handle_key(KeyCode::Tab).unwrap();
+        assert_eq!(app.state.mode, Mode::Lists);
+        assert!(render_text(&mut app).contains("No task list open"));
+    }
+
+    // AT-3 covers REQ-1, REQ-2: Tab toggles twice back to Lists
+    #[test]
+    fn tab_cycles_forward_then_back() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Tab).unwrap();
+        assert!(matches!(app.state.mode, Mode::Tasks(_)));
+        app.handle_key(KeyCode::Tab).unwrap();
+        assert_eq!(app.state.mode, Mode::Lists);
+    }
+
+    // AT-4 covers REQ-1: Tab is no-op when no lists
+    #[test]
+    fn tab_is_noop_when_no_lists() {
+        let mut app = empty_app();
+        app.handle_key(KeyCode::Tab).unwrap();
+        assert_eq!(app.state.mode, Mode::Lists);
+    }
+
+    // AT-5 covers REQ-3: help screen mentions Tab
+    #[test]
+    fn help_screen_mentions_tab() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Char('?')).unwrap();
+        let text = render_text(&mut app);
+        assert!(text.contains("Tab"), "help screen should mention Tab");
+    }
+
+    // AT-6 covers REQ-4: Shift+Tab in Tasks returns to Lists
+    #[test]
+    fn shift_tab_returns_to_lists_from_tasks() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::Enter).unwrap();
+        app.handle_key(KeyCode::BackTab).unwrap();
+        assert_eq!(app.state.mode, Mode::Lists);
+    }
+
+    // AT-7 covers REQ-4: Shift+Tab in Lists opens Tasks
+    #[test]
+    fn shift_tab_opens_tasks_from_lists() {
+        let mut app = seeded_app();
+        app.handle_key(KeyCode::BackTab).unwrap();
+        assert_eq!(app.state.mode, Mode::Tasks(0));
+    }
+
+    // --- colour-theme tests (AT-5..AT-8) ---
+
+    fn area_has_fg(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16, color: Color) -> bool {
+        let buffer = terminal.backend().buffer();
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                if buffer[(x, y)].fg == color {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn area_has_modifier(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16, m: Modifier) -> bool {
+        let buffer = terminal.backend().buffer();
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                if buffer[(x, y)].modifier.contains(m) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn area_has_bg(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16, color: Color) -> bool {
+        let buffer = terminal.backend().buffer();
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                if buffer[(x, y)].bg == color {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    // AT-5 covers REQ-4, REQ-6: default theme renders LightCyan lists border in Lists mode
+    #[test]
+    fn default_theme_lists_border_is_cyan_in_lists_mode() {
+        let mut app = seeded_app(); // seeded_app uses ColourTheme::default()
+        let terminal = render_terminal(&mut app);
+        assert!(area_has_fg(&terminal, 0, 45, 0, 25, Color::LightCyan));
+        assert!(!area_has_fg(&terminal, 45, 100, 0, 25, Color::LightCyan));
+    }
+
+    // AT-6 covers REQ-4: custom theme active_panel_border applied to border
+    #[test]
+    fn custom_theme_active_border_color_applied() {
+        let theme = ColourTheme {
+            active_panel_border: NamedColor::Green,
+            ..ColourTheme::default()
+        };
+        let mut app = seeded_app_with_theme(theme);
+        let terminal = render_terminal(&mut app);
+        assert!(area_has_fg(&terminal, 0, 45, 0, 25, Color::Green), "lists border should be Green");
+    }
+
+    // AT-7 covers REQ-4, REQ-6: default theme selected row uses REVERSED modifier
+    #[test]
+    fn default_theme_selected_row_uses_reversed_modifier() {
+        let mut app = seeded_app(); // default theme: selected_item_reverse = true
+        let terminal = render_terminal(&mut app);
+        // The selected row is in the lists panel (x=0..45)
+        assert!(
+            area_has_modifier(&terminal, 0, 45, 0, 25, Modifier::REVERSED),
+            "selected row should have REVERSED modifier with default theme"
+        );
+    }
+
+    // AT-8 covers REQ-4: custom selected_item fg/bg applied to selected row
+    #[test]
+    fn custom_theme_selected_row_explicit_colors_applied() {
+        let theme = ColourTheme {
+            selected_item_fg: NamedColor::Black,
+            selected_item_bg: NamedColor::Yellow,
+            selected_item_reverse: false,
+            ..ColourTheme::default()
+        };
+        let mut app = seeded_app_with_theme(theme);
+        let terminal = render_terminal(&mut app);
+        assert!(area_has_bg(&terminal, 0, 45, 0, 25, Color::Yellow), "selected row bg should be Yellow");
+        assert!(area_has_fg(&terminal, 0, 45, 0, 25, Color::Black), "selected row fg should be Black");
     }
 }
