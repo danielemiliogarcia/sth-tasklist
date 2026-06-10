@@ -1,8 +1,20 @@
 # shtask
 
+Terminal task-list manager backed by local TOML files in `./.shtask/`.
+
 [![CI](https://github.com/danielemiliogarcia/sth-tasklist/actions/workflows/ci.yml/badge.svg)](https://github.com/danielemiliogarcia/sth-tasklist/actions/workflows/ci.yml)
 
-Terminal task-list manager backed by local TOML files in `./.shtask/`.
+
+## AI Handoff Example
+
+This application was developed with the
+[sth harness plugin](https://github.com/danielemiliogarcia/sth-harness-plugin).
+The plugin keeps the project's knowledge, decisions, and current work state in a
+tool-agnostic harness, making it possible to pass development between AI tools
+without losing context. This project started in Claude Code, moved to Codex, and
+then continued again in Claude Code.
+
+
 
 ## Run
 
