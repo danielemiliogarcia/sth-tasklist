@@ -37,3 +37,7 @@ Task mode:
 - `Space` complete selected task
 - `Up` / `Down` select a task; selection wraps at the top and bottom
 - `Esc` returns to List mode, closes help, or cancels prompts
+
+Screenshot
+
+![tui.png](img/tui.png)
