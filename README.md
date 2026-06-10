@@ -1,5 +1,7 @@
 # shtask
 
+[![CI](https://github.com/danielemiliogarcia/sth-tasklist/actions/workflows/ci.yml/badge.svg)](https://github.com/danielemiliogarcia/sth-tasklist/actions/workflows/ci.yml)
+
 Terminal task-list manager backed by local TOML files in `./.shtask/`.
 
 ## Run
