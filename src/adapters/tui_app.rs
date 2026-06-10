@@ -659,19 +659,13 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             self.state
                 .lists
                 .iter()
-                .enumerate()
-                .map(|(index, list)| {
-                    let marker = if index == self.state.selected_list {
-                        ">>"
-                    } else {
-                        "  "
-                    };
+                .map(|list| {
                     let (status, style) = if list.is_completed() {
                         ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
                     } else {
-                        ("pending", Style::default())
+                        ("☐", Style::default())
                     };
-                    ListItem::new(format!("{marker} {status} {}", list.name())).style(style)
+                    ListItem::new(format!("{status} {}", list.name())).style(style)
                 })
                 .collect()
         };
@@ -738,19 +732,13 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         self.state
             .tasks
             .iter()
-            .enumerate()
-            .map(|(index, task)| {
-                let marker = if index == self.state.selected_task {
-                    ">>"
-                } else {
-                    "  "
-                };
+            .map(|task| {
                 let (status, style) = if task.is_completed() {
                     ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
                 } else {
                     ("☐", Style::default())
                 };
-                ListItem::new(format!("{marker} {status} {}", task.title())).style(style)
+                ListItem::new(format!("{status} {}", task.title())).style(style)
             })
             .collect()
     }
@@ -765,7 +753,9 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 } else {
                     ("☐", Style::default())
                 };
-                ListItem::new(format!("   {status} {}", task.title())).style(style)
+                // "  " matches the 2-char width of ratatui's highlight_symbol ("> ") so
+                // items don't shift when switching from preview to Tasks mode.
+                ListItem::new(format!("  {status} {}", task.title())).style(style)
             })
             .collect()
     }
@@ -1728,6 +1718,48 @@ mod tests {
         let terminal = render_terminal(&mut app);
         assert!(area_has_bg(&terminal, 0, 45, 0, 25, Color::Yellow), "selected row bg should be Yellow");
         assert!(area_has_fg(&terminal, 0, 45, 0, 25, Color::Black), "selected row fg should be Black");
+    }
+
+    // --- list-item-display tests (AT-1..AT-3) ---
+
+    // AT-1 covers REQ-1: uncompleted list shows ☐ not "pending"
+    #[test]
+    fn uncompleted_list_shows_checkbox_not_pending() {
+        let mut app = seeded_app(); // "work" is uncompleted
+        let text = render_text(&mut app);
+        assert!(text.contains("☐"), "uncompleted list must show ☐");
+        assert!(!text.contains("pending"), "must not show 'pending'");
+    }
+
+    // AT-2 covers REQ-2: task title column in preview mode matches column in Tasks mode
+    #[test]
+    fn task_title_column_stable_preview_vs_tasks_mode() {
+        let mut app = seeded_app(); // home list (index 1) has "laundry"
+        app.handle_key(KeyCode::Down).unwrap(); // select "home" → preview shows "laundry"
+        let text_preview = render_text(&mut app);
+        let col_preview = text_preview.lines().find_map(|l| l.find("laundry"));
+
+        app.handle_key(KeyCode::Right).unwrap(); // enter Tasks mode for "home"
+        let text_tasks = render_text(&mut app);
+        let col_tasks = text_tasks.lines().find_map(|l| l.find("laundry"));
+
+        assert_eq!(col_preview, col_tasks, "task title column must be same in preview and Tasks mode");
+    }
+
+    // AT-3 covers REQ-2: task title column stable for non-selected item in Tasks mode vs preview
+    #[test]
+    fn task_title_column_stable_non_selected_vs_preview() {
+        let mut app = seeded_app(); // work list (index 0) has "milk" and "bread"
+        // Preview of "work" list (selected_list = 0)
+        let text_preview = render_text(&mut app);
+        let col_milk_preview = text_preview.lines().find_map(|l| l.find("milk"));
+
+        app.handle_key(KeyCode::Right).unwrap(); // enter Tasks mode; "milk" at index 0 is selected
+        app.handle_key(KeyCode::Down).unwrap();  // move to "bread"; "milk" is now non-selected
+        let text_tasks = render_text(&mut app);
+        let col_milk_tasks = text_tasks.lines().find_map(|l| l.find("milk"));
+
+        assert_eq!(col_milk_preview, col_milk_tasks, "non-selected task column must match preview column");
     }
 
     // --- auto-display-list tests (AT-1..AT-3 + regression) ---
