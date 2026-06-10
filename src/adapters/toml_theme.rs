@@ -138,7 +138,10 @@ mod tests {
         let path = write_temp("at3_colours.toml", r#"active_panel_border = "Green""#);
         let theme = TomlThemeRepository::new(&path).load();
         assert_eq!(theme.active_panel_border, NamedColor::Green);
-        assert_eq!(theme.inactive_panel_border, ColourTheme::default().inactive_panel_border);
+        assert_eq!(
+            theme.inactive_panel_border,
+            ColourTheme::default().inactive_panel_border
+        );
     }
 
     // AT-3 (green-completed-tasks) covers REQ-3: completed_task_fg overridden by TOML
@@ -153,6 +156,9 @@ mod tests {
     #[test]
     fn malformed_toml_returns_default_no_panic() {
         let path = write_temp("at4_colours.toml", "this is not valid toml ===");
-        assert_eq!(TomlThemeRepository::new(&path).load(), ColourTheme::default());
+        assert_eq!(
+            TomlThemeRepository::new(&path).load(),
+            ColourTheme::default()
+        );
     }
 }

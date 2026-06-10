@@ -9,10 +9,10 @@ use shtask::adapters::toml_repo::TomlTaskListRepository;
 use shtask::adapters::toml_theme::TomlThemeRepository;
 use shtask::adapters::tui_app::App;
 use shtask::adapters::uuid_id::UuidIdGenerator;
-use shtask::application::ports::ThemeRepository;
 use shtask::application::create_task_list::CreateTaskList;
 use shtask::application::delete_task_list::DeleteTaskList;
 use shtask::application::list_task_lists::ListTaskLists;
+use shtask::application::ports::ThemeRepository;
 use shtask::application::rename_task_list::RenameTaskList;
 use shtask::application::task_commands::{
     AddTask, CompleteTask, DeleteTask, ListTasks, RenameTask,

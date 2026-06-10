@@ -2,7 +2,7 @@
 //! Adapters convert NamedColor to their concrete colour types at the boundary.
 
 /// All named ratatui Color variants the theme supports.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum NamedColor {
     Black,
     Red,
@@ -20,13 +20,8 @@ pub enum NamedColor {
     LightMagenta,
     LightCyan,
     LightWhite,
+    #[default]
     Reset,
-}
-
-impl Default for NamedColor {
-    fn default() -> Self {
-        Self::Reset
-    }
 }
 
 /// User-configurable colour theme for the TUI.
@@ -72,7 +67,10 @@ mod tests {
         let theme = ColourTheme::default();
         assert_eq!(theme.active_panel_border, NamedColor::LightCyan);
         assert_eq!(theme.inactive_panel_border, NamedColor::Reset);
-        assert!(theme.selected_item_reverse, "default uses REVERSED modifier");
+        assert!(
+            theme.selected_item_reverse,
+            "default uses REVERSED modifier"
+        );
     }
 
     // AT-1 covers REQ-2 (green-completed-tasks): default completed_task_fg is Green

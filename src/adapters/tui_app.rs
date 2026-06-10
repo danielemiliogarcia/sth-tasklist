@@ -17,11 +17,11 @@ use crate::application::create_task_list::{CreateError, CreateTaskList};
 use crate::application::delete_task_list::{DeleteError, DeleteTaskList};
 use crate::application::list_task_lists::ListTaskLists;
 use crate::application::ports::{IdGenerator, TaskListRepository};
-use crate::domain::colour_theme::{ColourTheme, NamedColor};
 use crate::application::rename_task_list::{RenameError, RenameTaskList};
 use crate::application::task_commands::{
     AddTask, CompleteTask, DeleteTask, ListTasks, RenameTask, TaskCommandError, UncompleteTask,
 };
+use crate::domain::colour_theme::{ColourTheme, NamedColor};
 use crate::domain::task::Task;
 use crate::domain::task_list::{TaskList, TaskListId};
 
@@ -639,7 +639,11 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
     fn render(&self, frame: &mut Frame) {
         let [main_area, status_area, hotkey_area] = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(3), Constraint::Length(1)])
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ])
             .areas(frame.area());
         let [lists_area, tasks_area] = Layout::default()
             .direction(Direction::Horizontal)
@@ -661,7 +665,10 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                 .iter()
                 .map(|list| {
                     let (status, style) = if list.is_completed() {
-                        ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
+                        (
+                            "✓",
+                            Style::default().fg(named_to_color(&self.theme.completed_task_fg)),
+                        )
                     } else {
                         ("☐", Style::default())
                     };
@@ -734,7 +741,10 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             .iter()
             .map(|task| {
                 let (status, style) = if task.is_completed() {
-                    ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
+                    (
+                        "✓",
+                        Style::default().fg(named_to_color(&self.theme.completed_task_fg)),
+                    )
                 } else {
                     ("☐", Style::default())
                 };
@@ -749,7 +759,10 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             .iter()
             .map(|task| {
                 let (status, style) = if task.is_completed() {
-                    ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
+                    (
+                        "✓",
+                        Style::default().fg(named_to_color(&self.theme.completed_task_fg)),
+                    )
                 } else {
                     ("☐", Style::default())
                 };
@@ -829,7 +842,9 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         let text = match &self.state.interaction {
             Interaction::None => match self.state.mode {
                 Mode::Lists => "n: new  r: rename  d: delete  Enter/Tab: open tasks  q: quit",
-                Mode::Tasks(_) => "n: new  r: rename  d: delete  Space: toggle  Esc/Tab: lists  q: quit",
+                Mode::Tasks(_) => {
+                    "n: new  r: rename  d: delete  Space: toggle  Esc/Tab: lists  q: quit"
+                }
             },
             Interaction::Help => "?: close help  q: quit",
             Interaction::Editing(_) => "Enter: submit  Esc: cancel",
@@ -1183,7 +1198,9 @@ mod tests {
         seeded_app_with_theme(ColourTheme::default())
     }
 
-    fn seeded_app_with_theme(theme: ColourTheme) -> App<InMemoryTaskListRepository, SeqIdGenerator> {
+    fn seeded_app_with_theme(
+        theme: ColourTheme,
+    ) -> App<InMemoryTaskListRepository, SeqIdGenerator> {
         let mut repo = InMemoryTaskListRepository::new();
         let ids = SeqIdGenerator::new();
 
@@ -1268,14 +1285,22 @@ mod tests {
         text
     }
 
-    fn render_terminal(app: &mut App<InMemoryTaskListRepository, SeqIdGenerator>) -> Terminal<TestBackend> {
+    fn render_terminal(
+        app: &mut App<InMemoryTaskListRepository, SeqIdGenerator>,
+    ) -> Terminal<TestBackend> {
         let backend = TestBackend::new(100, 28);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|frame| app.render(frame)).unwrap();
         terminal
     }
 
-    fn area_has_cyan(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16) -> bool {
+    fn area_has_cyan(
+        terminal: &Terminal<TestBackend>,
+        x_start: u16,
+        x_end: u16,
+        y_start: u16,
+        y_end: u16,
+    ) -> bool {
         let buffer = terminal.backend().buffer();
         for y in y_start..y_end {
             for x in x_start..x_end {
@@ -1371,7 +1396,10 @@ mod tests {
 
         let quit = app.handle_key(KeyCode::Char('q')).unwrap();
 
-        assert!(!quit, "expected Ok(false) — app should not quit while editing");
+        assert!(
+            !quit,
+            "expected Ok(false) — app should not quit while editing"
+        );
         assert_eq!(app.state.input, "q");
     }
 
@@ -1398,7 +1426,10 @@ mod tests {
 
         let quit = app.handle_key(KeyCode::Char('q')).unwrap();
 
-        assert!(!quit, "expected Ok(false) — app should not quit while confirming");
+        assert!(
+            !quit,
+            "expected Ok(false) — app should not quit while confirming"
+        );
         assert!(
             matches!(app.state.interaction, Interaction::Confirming(_)),
             "interaction should stay Confirming"
@@ -1429,7 +1460,10 @@ mod tests {
         // Enter with empty input: submit_edit fails with EmptyName, does not change mode/selection
         let r3 = app.handle_key(KeyCode::Enter).unwrap();
 
-        assert!(!r1 && !r2 && !r3, "Up/Down/Enter should return Ok(false) while editing");
+        assert!(
+            !r1 && !r2 && !r3,
+            "Up/Down/Enter should return Ok(false) while editing"
+        );
         assert_eq!(app.state.selected_list, selected_before);
         assert_eq!(app.state.mode, mode_before);
     }
@@ -1445,8 +1479,14 @@ mod tests {
         assert_eq!(app.state.mode, Mode::Lists);
         let terminal = render_terminal(&mut app);
 
-        assert!(area_has_cyan(&terminal, 0, 45, 0, 25), "lists border should be LightCyan in Lists mode");
-        assert!(!area_has_cyan(&terminal, 45, 100, 0, 25), "tasks border should NOT be LightCyan in Lists mode");
+        assert!(
+            area_has_cyan(&terminal, 0, 45, 0, 25),
+            "lists border should be LightCyan in Lists mode"
+        );
+        assert!(
+            !area_has_cyan(&terminal, 45, 100, 0, 25),
+            "tasks border should NOT be LightCyan in Lists mode"
+        );
     }
 
     // AT-2 covers REQ-2, REQ-3: tasks border is LightCyan in Tasks mode; lists border is not
@@ -1457,8 +1497,14 @@ mod tests {
         assert!(matches!(app.state.mode, Mode::Tasks(_)));
         let terminal = render_terminal(&mut app);
 
-        assert!(area_has_cyan(&terminal, 45, 100, 0, 25), "tasks border should be LightCyan in Tasks mode");
-        assert!(!area_has_cyan(&terminal, 0, 45, 0, 25), "lists border should NOT be LightCyan in Tasks mode");
+        assert!(
+            area_has_cyan(&terminal, 45, 100, 0, 25),
+            "tasks border should be LightCyan in Tasks mode"
+        );
+        assert!(
+            !area_has_cyan(&terminal, 0, 45, 0, 25),
+            "lists border should NOT be LightCyan in Tasks mode"
+        );
     }
 
     // AT-3 covers REQ-1, REQ-2: cyan tracks mode toggle
@@ -1555,7 +1601,14 @@ mod tests {
 
     // --- colour-theme tests (AT-5..AT-8) ---
 
-    fn area_has_fg(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16, color: Color) -> bool {
+    fn area_has_fg(
+        terminal: &Terminal<TestBackend>,
+        x_start: u16,
+        x_end: u16,
+        y_start: u16,
+        y_end: u16,
+        color: Color,
+    ) -> bool {
         let buffer = terminal.backend().buffer();
         for y in y_start..y_end {
             for x in x_start..x_end {
@@ -1567,7 +1620,14 @@ mod tests {
         false
     }
 
-    fn area_has_modifier(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16, m: Modifier) -> bool {
+    fn area_has_modifier(
+        terminal: &Terminal<TestBackend>,
+        x_start: u16,
+        x_end: u16,
+        y_start: u16,
+        y_end: u16,
+        m: Modifier,
+    ) -> bool {
         let buffer = terminal.backend().buffer();
         for y in y_start..y_end {
             for x in x_start..x_end {
@@ -1579,7 +1639,14 @@ mod tests {
         false
     }
 
-    fn area_has_bg(terminal: &Terminal<TestBackend>, x_start: u16, x_end: u16, y_start: u16, y_end: u16, color: Color) -> bool {
+    fn area_has_bg(
+        terminal: &Terminal<TestBackend>,
+        x_start: u16,
+        x_end: u16,
+        y_start: u16,
+        y_end: u16,
+        color: Color,
+    ) -> bool {
         let buffer = terminal.backend().buffer();
         for y in y_start..y_end {
             for x in x_start..x_end {
@@ -1599,7 +1666,10 @@ mod tests {
         let mut app = seeded_app();
         let row = render_hotkey_text(&mut app);
         assert!(row.contains("n: new"), "hotkey bar: n: new");
-        assert!(row.contains("Enter/Tab: open tasks"), "hotkey bar: Enter/Tab: open tasks");
+        assert!(
+            row.contains("Enter/Tab: open tasks"),
+            "hotkey bar: Enter/Tab: open tasks"
+        );
         assert!(row.contains("q: quit"), "hotkey bar: q: quit");
     }
 
@@ -1621,7 +1691,10 @@ mod tests {
         let row = render_hotkey_text(&mut app);
         assert!(row.contains("Enter: submit"), "hotkey bar: Enter: submit");
         assert!(row.contains("Esc: cancel"), "hotkey bar: Esc: cancel");
-        assert!(!row.contains("q: quit"), "hotkey bar: no q: quit while editing");
+        assert!(
+            !row.contains("q: quit"),
+            "hotkey bar: no q: quit while editing"
+        );
     }
 
     // AT-5 covers REQ-5: hotkey bar during Confirming shows y/n, no q: quit
@@ -1632,7 +1705,10 @@ mod tests {
         let row = render_hotkey_text(&mut app);
         assert!(row.contains("y: confirm"), "hotkey bar: y: confirm");
         assert!(row.contains("n/Esc: cancel"), "hotkey bar: n/Esc: cancel");
-        assert!(!row.contains("q: quit"), "hotkey bar: no q: quit while confirming");
+        assert!(
+            !row.contains("q: quit"),
+            "hotkey bar: no q: quit while confirming"
+        );
     }
 
     // AT-5 covers REQ-4, REQ-5 (uncomplete-task): Space toggles completion both ways
@@ -1642,10 +1718,16 @@ mod tests {
         app.handle_key(KeyCode::Enter).unwrap(); // open tasks (milk=completed, bread=incomplete)
         // milk is already completed; Space → should uncomplete it
         app.handle_key(KeyCode::Char(' ')).unwrap();
-        assert!(!app.state.tasks[0].is_completed(), "milk should be incomplete after first Space");
+        assert!(
+            !app.state.tasks[0].is_completed(),
+            "milk should be incomplete after first Space"
+        );
         // Space again → complete it
         app.handle_key(KeyCode::Char(' ')).unwrap();
-        assert!(app.state.tasks[0].is_completed(), "milk should be complete after second Space");
+        assert!(
+            app.state.tasks[0].is_completed(),
+            "milk should be complete after second Space"
+        );
     }
 
     // AT-6 covers REQ-6 (uncomplete-task): status bar and help mention "toggle complete"
@@ -1655,11 +1737,17 @@ mod tests {
         app.handle_key(KeyCode::Enter).unwrap();
         app.handle_key(KeyCode::Down).unwrap(); // select bread (incomplete)
         let text = render_text(&mut app);
-        assert!(text.contains("toggle complete"), "status bar should say toggle complete");
+        assert!(
+            text.contains("toggle complete"),
+            "status bar should say toggle complete"
+        );
 
         app.handle_key(KeyCode::Char('?')).unwrap();
         let help_text = render_text(&mut app);
-        assert!(help_text.contains("Space toggle complete"), "help should say Space toggle complete");
+        assert!(
+            help_text.contains("Space toggle complete"),
+            "help should say Space toggle complete"
+        );
     }
 
     // AT-2 covers REQ-1 (green-completed-tasks): completed task renders with completed_task_fg color
@@ -1690,7 +1778,10 @@ mod tests {
         };
         let mut app = seeded_app_with_theme(theme);
         let terminal = render_terminal(&mut app);
-        assert!(area_has_fg(&terminal, 0, 45, 0, 25, Color::Green), "lists border should be Green");
+        assert!(
+            area_has_fg(&terminal, 0, 45, 0, 25, Color::Green),
+            "lists border should be Green"
+        );
     }
 
     // AT-7 covers REQ-4, REQ-6: default theme selected row uses REVERSED modifier
@@ -1716,8 +1807,14 @@ mod tests {
         };
         let mut app = seeded_app_with_theme(theme);
         let terminal = render_terminal(&mut app);
-        assert!(area_has_bg(&terminal, 0, 45, 0, 25, Color::Yellow), "selected row bg should be Yellow");
-        assert!(area_has_fg(&terminal, 0, 45, 0, 25, Color::Black), "selected row fg should be Black");
+        assert!(
+            area_has_bg(&terminal, 0, 45, 0, 25, Color::Yellow),
+            "selected row bg should be Yellow"
+        );
+        assert!(
+            area_has_fg(&terminal, 0, 45, 0, 25, Color::Black),
+            "selected row fg should be Black"
+        );
     }
 
     // --- list-item-display tests (AT-1..AT-3) ---
@@ -1743,7 +1840,10 @@ mod tests {
         let text_tasks = render_text(&mut app);
         let col_tasks = text_tasks.lines().find_map(|l| l.find("laundry"));
 
-        assert_eq!(col_preview, col_tasks, "task title column must be same in preview and Tasks mode");
+        assert_eq!(
+            col_preview, col_tasks,
+            "task title column must be same in preview and Tasks mode"
+        );
     }
 
     // AT-3 covers REQ-2: task title column stable for non-selected item in Tasks mode vs preview
@@ -1755,11 +1855,14 @@ mod tests {
         let col_milk_preview = text_preview.lines().find_map(|l| l.find("milk"));
 
         app.handle_key(KeyCode::Right).unwrap(); // enter Tasks mode; "milk" at index 0 is selected
-        app.handle_key(KeyCode::Down).unwrap();  // move to "bread"; "milk" is now non-selected
+        app.handle_key(KeyCode::Down).unwrap(); // move to "bread"; "milk" is now non-selected
         let text_tasks = render_text(&mut app);
         let col_milk_tasks = text_tasks.lines().find_map(|l| l.find("milk"));
 
-        assert_eq!(col_milk_preview, col_milk_tasks, "non-selected task column must match preview column");
+        assert_eq!(
+            col_milk_preview, col_milk_tasks,
+            "non-selected task column must match preview column"
+        );
     }
 
     // --- auto-display-list tests (AT-1..AT-3 + regression) ---
@@ -1776,7 +1879,10 @@ mod tests {
         assert_eq!(app.state.mode, Mode::Lists);
         assert_eq!(app.state.selected_list, 1);
         let text = render_text(&mut app);
-        assert!(text.contains("laundry"), "right pane should show home's task after Down");
+        assert!(
+            text.contains("laundry"),
+            "right pane should show home's task after Down"
+        );
         assert!(!text.contains("milk"), "stale work tasks must not appear");
     }
 
@@ -1800,11 +1906,23 @@ mod tests {
     fn navigating_to_empty_list_clears_preview() {
         let mut repo = crate::adapters::in_memory::InMemoryTaskListRepository::new();
         let ids = crate::adapters::in_memory::SeqIdGenerator::new();
-        let list_a = { let mut c = CreateTaskList::new(&mut repo, &ids); c.execute("alpha").unwrap() };
-        AddTask::new(&mut repo).execute(&list_a, "task-one").unwrap();
-        { let mut c = CreateTaskList::new(&mut repo, &ids); c.execute("empty").unwrap() };
+        let list_a = {
+            let mut c = CreateTaskList::new(&mut repo, &ids);
+            c.execute("alpha").unwrap()
+        };
+        AddTask::new(&mut repo)
+            .execute(&list_a, "task-one")
+            .unwrap();
+        {
+            let mut c = CreateTaskList::new(&mut repo, &ids);
+            c.execute("empty").unwrap()
+        };
 
-        let mut app = App::new(repo, ids, crate::domain::colour_theme::ColourTheme::default());
+        let mut app = App::new(
+            repo,
+            ids,
+            crate::domain::colour_theme::ColourTheme::default(),
+        );
         app.load_once().unwrap();
 
         // Start on "alpha" (index 0) — preview shows "task-one"
@@ -1817,7 +1935,10 @@ mod tests {
 
         let text = render_text(&mut app);
         assert!(!text.contains("task-one"), "stale task-one must not appear");
-        assert!(text.contains("No tasks"), "empty list must show empty state");
+        assert!(
+            text.contains("No tasks"),
+            "empty list must show empty state"
+        );
     }
 
     // Regression: creating a list while a non-empty list is selected must not show stale preview
@@ -1831,7 +1952,13 @@ mod tests {
 
         // new "groceries" list is selected and has no tasks
         let text = render_text(&mut app);
-        assert!(!text.contains("milk"), "stale work tasks must not appear after creating new list");
-        assert!(text.contains("No tasks"), "new empty list must show empty state");
+        assert!(
+            !text.contains("milk"),
+            "stale work tasks must not appear after creating new list"
+        );
+        assert!(
+            text.contains("No tasks"),
+            "new empty list must show empty state"
+        );
     }
 }
