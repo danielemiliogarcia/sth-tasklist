@@ -36,6 +36,7 @@ pub struct App<R, I> {
 struct AppState {
     lists: Vec<TaskList>,
     tasks: Vec<Task>,
+    preview_tasks: Vec<Task>,
     selected_list: usize,
     selected_task: usize,
     mode: Mode,
@@ -117,6 +118,8 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         self.clamp_selection();
         if matches!(self.state.mode, Mode::Tasks(_)) {
             self.reload_tasks()?;
+        } else {
+            self.load_preview();
         }
         Ok(())
     }
@@ -291,6 +294,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                     Ok(id) => {
                         self.refresh()?;
                         self.select_list_id(&id);
+                        self.load_preview();
                         self.state.mode = Mode::Lists;
                         self.state.status = format!("Created list {value}");
                         Ok(())
@@ -474,6 +478,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
             Mode::Lists if !self.state.lists.is_empty() => {
                 self.state.selected_list = (self.state.selected_list + 1) % self.state.lists.len();
                 self.state.status = self.selection_status();
+                self.load_preview();
             }
             Mode::Tasks(_) if !self.state.tasks.is_empty() => {
                 self.state.selected_task = (self.state.selected_task + 1) % self.state.tasks.len();
@@ -497,6 +502,7 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                     self.state.selected_list - 1
                 };
                 self.state.status = self.selection_status();
+                self.load_preview();
             }
             Mode::Tasks(_) if !self.state.tasks.is_empty() => {
                 self.state.selected_task = if self.state.selected_task == 0 {
@@ -541,6 +547,17 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
         self.state.mode = Mode::Lists;
         self.state.tasks.clear();
         self.state.selected_task = 0;
+        self.load_preview();
+    }
+
+    fn load_preview(&mut self) {
+        let Some(list) = self.state.lists.get(self.state.selected_list) else {
+            self.state.preview_tasks.clear();
+            return;
+        };
+        self.state.preview_tasks = ListTasks::new(&self.repo)
+            .execute(list.id())
+            .unwrap_or_default();
     }
 
     fn open_tasks(&mut self) -> Result<(), String> {
@@ -690,7 +707,9 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
 
     fn render_task_list(&self, frame: &mut Frame, area: Rect) {
         let items = match self.state.mode {
-            Mode::Lists => vec![ListItem::new("No task list open")],
+            Mode::Lists if self.state.lists.is_empty() => vec![ListItem::new("No task list open")],
+            Mode::Lists if self.state.preview_tasks.is_empty() => vec![ListItem::new("No tasks")],
+            Mode::Lists => self.preview_task_items(),
             Mode::Tasks(_) if self.state.tasks.is_empty() => vec![ListItem::new("No tasks")],
             Mode::Tasks(_) => self.task_items(),
         };
@@ -732,6 +751,21 @@ impl<R: TaskListRepository, I: IdGenerator> App<R, I> {
                     ("☐", Style::default())
                 };
                 ListItem::new(format!("{marker} {status} {}", task.title())).style(style)
+            })
+            .collect()
+    }
+
+    fn preview_task_items(&self) -> Vec<ListItem<'static>> {
+        self.state
+            .preview_tasks
+            .iter()
+            .map(|task| {
+                let (status, style) = if task.is_completed() {
+                    ("✓", Style::default().fg(named_to_color(&self.theme.completed_task_fg)))
+                } else {
+                    ("☐", Style::default())
+                };
+                ListItem::new(format!("   {status} {}", task.title())).style(style)
             })
             .collect()
     }
@@ -952,7 +986,7 @@ mod tests {
         let text = render_text(&mut app);
 
         assert!(!text.contains("List mode"));
-        assert!(text.contains("No task list open"));
+        assert!(text.contains("milk") && text.contains("bread"));
     }
 
     #[test]
@@ -1288,7 +1322,9 @@ mod tests {
         app.handle_key(KeyCode::Left).unwrap();
 
         assert_eq!(app.state.mode, Mode::Lists);
-        assert!(render_text(&mut app).contains("No task list open"));
+        // right pane now shows preview of the still-selected list ("work")
+        let text = render_text(&mut app);
+        assert!(text.contains("milk") && text.contains("bread"));
     }
 
     // AT-3 covers REQ-1, REQ-3: Right and Enter produce identical result
@@ -1478,7 +1514,9 @@ mod tests {
         app.handle_key(KeyCode::Enter).unwrap();
         app.handle_key(KeyCode::Tab).unwrap();
         assert_eq!(app.state.mode, Mode::Lists);
-        assert!(render_text(&mut app).contains("No task list open"));
+        // right pane now shows preview of the still-selected list ("work")
+        let text = render_text(&mut app);
+        assert!(text.contains("milk") && text.contains("bread"));
     }
 
     // AT-3 covers REQ-1, REQ-2: Tab toggles twice back to Lists
@@ -1690,5 +1728,78 @@ mod tests {
         let terminal = render_terminal(&mut app);
         assert!(area_has_bg(&terminal, 0, 45, 0, 25, Color::Yellow), "selected row bg should be Yellow");
         assert!(area_has_fg(&terminal, 0, 45, 0, 25, Color::Black), "selected row fg should be Black");
+    }
+
+    // --- auto-display-list tests (AT-1..AT-3 + regression) ---
+
+    // AT-1 covers REQ-1: Down in Lists mode auto-previews tasks without entering the list
+    #[test]
+    fn down_in_lists_mode_previews_tasks_without_entering() {
+        let mut app = seeded_app(); // work(milk,bread) at index 0, home(laundry) at index 1
+        assert_eq!(app.state.mode, Mode::Lists);
+        assert_eq!(app.state.selected_list, 0);
+
+        app.handle_key(KeyCode::Down).unwrap();
+
+        assert_eq!(app.state.mode, Mode::Lists);
+        assert_eq!(app.state.selected_list, 1);
+        let text = render_text(&mut app);
+        assert!(text.contains("laundry"), "right pane should show home's task after Down");
+        assert!(!text.contains("milk"), "stale work tasks must not appear");
+    }
+
+    // AT-2 covers REQ-2: Right/Tab in Lists mode still requires explicit key to enter task mode
+    #[test]
+    fn right_requires_explicit_key_to_enter_task_mode() {
+        let mut app = seeded_app();
+        assert_eq!(app.state.mode, Mode::Lists);
+
+        // Down navigates + previews but stays in Lists
+        app.handle_key(KeyCode::Down).unwrap();
+        assert_eq!(app.state.mode, Mode::Lists);
+
+        // Explicit Right enters Tasks mode
+        app.handle_key(KeyCode::Right).unwrap();
+        assert!(matches!(app.state.mode, Mode::Tasks(1)));
+    }
+
+    // AT-3 covers REQ-3: navigating to empty list shows empty state, not stale content
+    #[test]
+    fn navigating_to_empty_list_clears_preview() {
+        let mut repo = crate::adapters::in_memory::InMemoryTaskListRepository::new();
+        let ids = crate::adapters::in_memory::SeqIdGenerator::new();
+        let list_a = { let mut c = CreateTaskList::new(&mut repo, &ids); c.execute("alpha").unwrap() };
+        AddTask::new(&mut repo).execute(&list_a, "task-one").unwrap();
+        { let mut c = CreateTaskList::new(&mut repo, &ids); c.execute("empty").unwrap() };
+
+        let mut app = App::new(repo, ids, crate::domain::colour_theme::ColourTheme::default());
+        app.load_once().unwrap();
+
+        // Start on "alpha" (index 0) — preview shows "task-one"
+        let text = render_text(&mut app);
+        assert!(text.contains("task-one"));
+
+        // Navigate Down to "empty" list (index 1)
+        app.handle_key(KeyCode::Down).unwrap();
+        assert_eq!(app.state.selected_list, 1);
+
+        let text = render_text(&mut app);
+        assert!(!text.contains("task-one"), "stale task-one must not appear");
+        assert!(text.contains("No tasks"), "empty list must show empty state");
+    }
+
+    // Regression: creating a list while a non-empty list is selected must not show stale preview
+    #[test]
+    fn creating_list_shows_empty_preview_for_new_list() {
+        let mut app = seeded_app(); // work(milk, bread) selected
+        assert!(render_text(&mut app).contains("milk"));
+
+        press_text(&mut app, KeyCode::Char('n'), "groceries");
+        app.handle_key(KeyCode::Enter).unwrap();
+
+        // new "groceries" list is selected and has no tasks
+        let text = render_text(&mut app);
+        assert!(!text.contains("milk"), "stale work tasks must not appear after creating new list");
+        assert!(text.contains("No tasks"), "new empty list must show empty state");
     }
 }
