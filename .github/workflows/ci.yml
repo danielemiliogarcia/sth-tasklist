@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  # push: # tests your branch as-is
+  push: # tests your branch as-is
   pull_request: # tests "what would happen if this merged right now in a temporary merge commit"
 
   # Uncomment below (and remove the bare triggers above) to restrict to specific branches:
